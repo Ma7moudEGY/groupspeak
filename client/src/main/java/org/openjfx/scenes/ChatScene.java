@@ -1373,32 +1373,7 @@ public class ChatScene extends Scene {
         renderContactList(allContacts);
 
         chatArea.getChildren().clear();
-
-        // Load messages from server
-        try {
-            List<Message> messages = chatHandler.getMessages(contact.id);
-            String myId = ClientState.getInstance().getCurrentUserId();
-
-            for (Message m : messages) {
-                boolean isMe = m.senderId.equals(myId);
-                String senderName = "Unknown";
-                if (isMe) {
-                    senderName = "You";
-                } else {
-                    // Find sender name in participants
-                    for (User u : contact.participants) {
-                        if (u.id.equals(m.senderId)) {
-                            senderName = u.displayName;
-                            break;
-                        }
-                    }
-                }
-                addMessage(m.content, senderName, isMe);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
+        reloadMessages(contact.id);
         root.setCenter(chatView);
 
         Platform.runLater(() -> messageInput.requestFocus());
@@ -1467,21 +1442,60 @@ public class ChatScene extends Scene {
             new Thread(() -> {
                 try {
                     if (isGroup) {
-                        chatHandler.sendToGroup(convId, myId, msgContent);
-                        chatHandler.getMessages(convId);
+                        chatHandler.sendToGroup(convId, myId, msgContent); 
                     } else {
                         if (recipientId != null) {
                             chatHandler.sendDM(convId, myId, msgContent, recipientId);
-                            chatHandler.getMessages(convId);
                             System.out.println("Message sent request sent.");
                         } else {
                             System.err.println("Cannot send DM: Recipient not found in contact.");
                         }
                     }
+                    // After sending, reload messages on the JavaFX Application Thread
+                    Platform.runLater(() -> {
+                        if (convId.equals(currentConversationId)) { // Ensure chat is still open
+                            reloadMessages(convId);
+                        }
+                    });
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }).start();
+        }
+    }
+
+    /**
+     * Fetches messages for a conversation from the server and renders them.
+     * This should be called on the JavaFX Application thread if it's updating the UI.
+     * To be safe, it clears the chat area before loading.
+     */
+    private void reloadMessages(String conversationId) {
+        chatArea.getChildren().clear();
+        try {
+            Contact contact = allContacts.stream().filter(c -> c.id.equals(conversationId)).findFirst().orElse(null);
+            if (contact == null) return;
+
+            List<Message> messages = chatHandler.getMessages(conversationId);
+            String myId = ClientState.getInstance().getCurrentUserId();
+
+            for (Message m : messages) {
+                boolean isMe = m.senderId.equals(myId);
+                String senderName = "Unknown";
+                if (isMe) {
+                    senderName = "You";
+                } else {
+                    // Find sender name in participants
+                    for (User u : contact.participants) {
+                        if (u.id.equals(m.senderId)) {
+                            senderName = u.displayName;
+                            break;
+                        }
+                    }
+                }
+                addMessage(m.content, senderName, isMe);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
